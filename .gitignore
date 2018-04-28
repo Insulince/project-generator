@@ -1,0 +1,5 @@
+.idea/
+bin/
+project-output/
+
+project-generator.iml
