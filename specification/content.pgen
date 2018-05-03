@@ -1,0 +1,83 @@
+•name•|cmd|srv|main.go
+package main
+
+import (
+	"github.com/rs/cors"
+	"log"
+	"•name•/pkg/configurations"
+	"•name•/pkg/database"
+	"•name•/pkg/routes"
+	"net/http"
+	"fmt"
+)
+
+func main() {
+	// Read config file and set up logging
+	configs := configurations.New("config.json")
+	configurations.ConfigureGraylog(configs.GrayLogURL)
+
+	repo := database.InitializeMongoDatabase(&database.DatabaseConfig{
+		DbURL:          configs.DbURL,
+		DatabaseName:   configs.DatabaseName,
+		CollectionName: configs.CollectionName,
+	})
+
+	// Create API routes
+	r := router.New()
+	r.CreateRoutes(repo)
+
+	// Start Web Server on given port with CORS enabled
+	fmt.Printf("Server listening on port %s\n", configs.ThisPortNumber)
+	log.Fatal(http.ListenAndServe(configs.ThisPortNumber, cors.Default().Handler(r)))
+}
+•••
+•name•|pkg|configuration|config.go
+•••
+•name•|pkg|database|db.go
+•••
+•name•|pkg|handlers|health.go
+•••
+•name•|pkg|handlers|home.go
+•••
+•name•|pkg|handlers|not-found.go
+•••
+•name•|pkg|handlers|•resource•.go
+•••
+•name•|pkg|models|responses|error.go
+•••
+•name•|pkg|models|responses|message.go
+•••
+•name•|pkg|models|api-request.go
+•••
+•name•|pkg|models|api-response-writer.go
+•••
+•name•|pkg|models|•resource•.go
+•••
+•name•|pkg|router|router.go
+•••
+•name•|helm|templates|deployment.yaml
+•••
+•name•|helm|templates|ingress.yaml
+•••
+•name•|helm|templates|service.yaml
+•••
+•name•|helm|Chart.yaml
+•••
+•name•|helm|values.yaml
+•••
+•name•|cmd|srv|config.json
+•••
+•name•|deploy.sh
+•••
+•name•|Dockerfile.release
+•••
+•name•|README.md
+•••
+•name•|helm|.helmignore
+•••
+•name•|.gitignore
+•••
+•name•|.dockerignore
+•••
+•name•|Dockerfile.build
+•••

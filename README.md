@@ -6,7 +6,7 @@ Build projects from custom or pre-made templates that are highly flexible and ea
 1. For every line starting from the first line onwards, if this line is not an empty line, then this line should be considered a variable declaration.
 2. Split this line based on the `=` character. Left of `=` is the name of the variable, right of `=` is the value.
 3. Once we reach an empty line, advance one more line. Assume that this line is the root of your project and contains 0 tabs (tabs indicate structure).
-4. Iterate over every line remaining in the project generation specification file searching for any mention of a variable by name, sandwiched between two `~`. So for example, if you had a variable `weight`. This step is searching every line for `~weight~`. Replace that with the actual value of the variable.
+4. Iterate over every line remaining in the project generation specification file searching for any mention of a variable by name, sandwiched between two `•`. So for example, if you had a variable `weight`. This step is searching every line for `•weight•`. Replace that with the actual value of the variable.
 5. Go back to the first line after the blank line following the variable declarations.
 6. For each line from here, check for the following:
     - Does this line contain `/` at the end?
@@ -39,7 +39,7 @@ So a working example of a Go API named `wiget-api`:
 name=widget-api
 resource=widget
 
-~name~/
+•name•/
 	cmd/
 		srv/
 			main.go
@@ -53,14 +53,14 @@ resource=widget
 			health.go
 			home.go
 			not-found.go
-			~resource~.go
+			•resource•.go
 		models/
 			responses/
 				error.go
 				message.go
 			api-request.go
 			api-response-writer.go
-			~resource~.go
+			•resource•.go
 		router/
 			router.go
 	.gitignore
@@ -77,7 +77,7 @@ resource=widget
 - Run the executable manually:
     - Execute `./bin/project-generator`
     - Possible command line arguments are:
-        - `generation-file-location` - Where your project generation specification file is located. Defaults to `./assets/project.gen`
+        - `generation-file-location` - Where your project generation specification file is located. Defaults to `./project.gen`
         - `content-files-location` - Where your content files will be located. Defaults to `./content-files`
         - `project-output-location` - Where the resulting project structure should be placed at. Defaults to `./project-output`
 - Run the executable via `make`:
@@ -85,8 +85,22 @@ resource=widget
     - Execute `make run`
 - Upon successful completion, your generated files will exist in whatever `project-output-location` was set to.
 
+## Notes
+- If you are using a lot of variables in your generation file, and it is the case that some variables are contained within others, you need to be careful of the ordering. You should place variables in order of largest variable to smallest to prevent a failure to replace it when looking for the content file corresponding to it. Example:
+```
+name=resource-xyz-v0.0.3
+resource=xyz-v0.0.3
+identifier=xyz
+version=v0.0.3
+```
+This is the **correct** way to enter these variable. In the content-file building process, we scan starting from the first variable onwards for variables to replace in the file names based on their value. So if you wanted to replace the entire `reosurce-xyz-v0.0.3` with `•name•`, you have to put it first, otherwise portions of that file name would be replaced by the other variables matching to it first and once we finally do get to `•name•`, there would be no valid string left to match it. This feels like a horrible design choice and should probably be changed in the future, but I am just noting it for now.
+
 ## TODO
 - Need to get a solid method for injecting the data in the content files into the generated files.
 - Need to allow for variable substitutions within the content files.
 - Templates!
-- Simplify flags and make sure they are actually working.
+- Allow for use of previously declared variables in newly declared variables. Ex:
+    ```
+    name=something          // something
+    fullname=•name•-full    // something-full
+    ```

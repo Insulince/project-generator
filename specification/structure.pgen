@@ -1,37 +1,34 @@
-name=widget-api
-resource=widget
-
-~name~/
-	cmd/
-		srv/
+•name•|
+	cmd|
+		srv|
 			main.go
 			config.json
-	helm/
-		templates/
+	helm|
+		templates|
 			deployment.yaml
 			ingress.yaml
 			service.yaml
 		.helmignore
 		Chart.yaml
 		values.yaml
-	pkg/
-		configurations/
+	pkg|
+		configurations|
 			config.go
-		database/
+		database|
 			db.go
-		handlers/
+		handlers|
 			health.go
 			home.go
 			not-found.go
-			~resource~.go
-		models/
-			responses/
+			•resource•.go
+		models|
+			responses|
 				error.go
 				message.go
 			api-request.go
 			api-response-writer.go
-			~resource~.go
-		router/
+			•resource•.go
+		router|
 			router.go
 	.dockerignore
 	.gitignore
