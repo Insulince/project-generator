@@ -1,8 +1,10 @@
 •name•|
+	bin|
+		.gitkeep
 	cmd|
 		srv|
-			main.go
 			config.json
+			main.go
 	helm|
 		templates|
 			deployment.yaml

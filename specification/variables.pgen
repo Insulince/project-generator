@@ -1,2 +1,7 @@
-name=widget-api
+name=widgets-api
+fm-name=WidgetsAPI
+f-name=Widgets API
 resource=widget
+u-resource=Widget
+p-resource=widgets
+up-resource=Widgets

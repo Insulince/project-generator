@@ -2,82 +2,501 @@
 package main
 
 import (
-	"github.com/rs/cors"
 	"log"
-	"•name•/pkg/configurations"
-	"•name•/pkg/database"
-	"•name•/pkg/routes"
 	"net/http"
-	"fmt"
+	"github.com/rs/cors"
+	"•name•/pkg/configurations"
+	"•name•/pkg/router"
+	"•name•/pkg/database"
 )
 
 func main() {
-	// Read config file and set up logging
-	configs := configurations.New("config.json")
-	configurations.ConfigureGraylog(configs.GrayLogURL)
+	// Load config file.
+    config := configurations.LoadConfig()
 
-	repo := database.InitializeMongoDatabase(&database.DatabaseConfig{
-		DbURL:          configs.DbURL,
-		DatabaseName:   configs.DatabaseName,
-		CollectionName: configs.CollectionName,
-	})
+    // Load cert file.
+    certs := configurations.LoadCerts()
 
-	// Create API routes
-	r := router.New()
-	r.CreateRoutes(repo)
+    collection := database.InitializeMongoDatabase(config, certs)
 
-	// Start Web Server on given port with CORS enabled
-	fmt.Printf("Server listening on port %s\n", configs.ThisPortNumber)
-	log.Fatal(http.ListenAndServe(configs.ThisPortNumber, cors.Default().Handler(r)))
+    // Create API routes.
+    r := router.New()
+    r.CreateRoutes(collection, config, certs)
+
+    // Start server on given port with CORS enabled.
+    log.Printf("Server listening on port %s\n", config.Port)
+    log.Fatal(
+        http.ListenAndServe(
+            ":"+config.Port,
+            cors.New(
+                cors.Options{
+                    AllowedOrigins:   []string{config.AllowedOrigins},
+                    AllowedHeaders:   []string{"Content-Type", "Authorization"},
+                    AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE"},
+                    AllowCredentials: true,
+                },
+            ).Handler(r),
+        ),
+    )
 }
 •••
-•name•|pkg|configuration|config.go
+•name•|pkg|configurations|config.go
+package configurations
+
+import (
+	"crypto/x509"
+	"os"
+	"log"
+	"encoding/json"
+	"io/ioutil"
+)
+
+type Config struct {
+}
+
+// LoadConfig gets the configuration values for the API.
+func LoadConfig() (config *Config) {
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath == "" {
+		configPath = "./config.json"
+		log.Printf("No CONFIG_PATH environment variable present, switching to default config path (\"%v\").\n", configPath)
+	}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		log.Fatalf("Failed to find config file at path \"%v\" (Stat error = \"%v\").\n", configPath, err.Error())
+	}
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		log.Fatalf("Error opening config file: \"%v\".\n", err.Error())
+	}
+	defer file.Close()
+
+	if err = json.NewDecoder(file).Decode(&config); err != nil {
+		log.Fatalf("Error decoding config file: \"%v\".\n", err.Error())
+	}
+
+	log.Printf("Config successfully loaded.\n")
+	return config
+}
+
+// LoadCerts gets the certificate file and makes it available to the rest of the project.
+func LoadCerts() (certPool *x509.CertPool) {
+	certPath := os.Getenv("CERT_PATH")
+	if certPath == "" {
+		certPath = ""
+		log.Printf("No CERT_PATH environment variable present, switching to default certificate authority path (\"%v\").\n", certPath)
+	}
+
+	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		log.Fatalf("Failed to find cert file at path \"%v\" (Stat error = \"%v\").\n", certPath, err.Error())
+	}
+
+	certContents, err := ioutil.ReadFile(certPath)
+	if err != nil {
+		log.Fatalf("Error opening cert file: \"%v\"\n", err.Error())
+	}
+
+	certPool = x509.NewCertPool()
+	if ok := certPool.AppendCertsFromPEM(certContents); !ok {
+		log.Fatal("Unable to append certificate bundle from cert file.")
+	}
+
+	log.Printf("Certificate authority successfully loaded.\n")
+	return certPool
+}
 •••
 •name•|pkg|database|db.go
+package database
+
+import (
+	"log"
+	"strings"
+	"github.com/globalsign/mgo"
+	"encoding/base64"
+    "crypto/x509"
+    "•name•/pkg/configurations"
+)
+
+type DBCollection struct {
+	Collection *mgo.Collection
+}
+
+// InitializeMongoDatabase initializes a connection to a specific collection in Mongo.
+func InitializeMongoDatabase(config *configurations.Config, certs *x509.CertPool) (collection *DBCollection) {
+	session, err := mgo.Dial(config.DatabaseURL)
+	if err != nil {
+		log.Println(connectionString)
+		log.Fatalf("Error connecting to database with connection string \"%v\": %v\n", connectionString, err)
+	}
+	session.SetMode(mgo.Monotonic, true)
+	mgoCollection := session.DB(config.Database).C(config.Collection)
+	return &DBCollection{Collection: mgoCollection}
+}
 •••
 •name•|pkg|handlers|health.go
+package handlers
+
+import (
+	"net/http"
+	"•name•/pkg/models/responses"
+	"•name•/pkg/models"
+)
+
+func HealthCheck(w http.ResponseWriter, r *http.Request) {
+	ar, aw := models.NewAPIRequest(r), models.NewAPIResponseWriter(w)
+	aw.Respond(ar, &responses.Message{Message: "OK"}, http.StatusOK)
+}
 •••
 •name•|pkg|handlers|home.go
+package handlers
+
+import (
+	"net/http"
+	"•name•/pkg/models/responses"
+	"•name•/pkg/models"
+)
+
+func Home(w http.ResponseWriter, r *http.Request) () {
+	ar, aw := models.NewAPIRequest(r), models.NewAPIResponseWriter(w)
+	aw.Respond(ar, &responses.Message{Message: "Welcome!"}, http.StatusOK)
+}
 •••
 •name•|pkg|handlers|not-found.go
+package handlers
+
+import (
+	"net/http"
+	"•name•/pkg/models/responses"
+	"•name•/pkg/models"
+)
+
+func NotFoundPage(w http.ResponseWriter, r *http.Request) {
+	ar, aw := models.NewAPIRequest(r), models.NewAPIResponseWriter(w)
+	aw.Respond(ar, &responses.Error{Error: "Unsupported URL provided."}, http.StatusNotFound)
+}
 •••
 •name•|pkg|handlers|•resource•.go
+package handlers
+
+// TODO
 •••
 •name•|pkg|models|responses|error.go
+package responses
+
+type Error struct {
+	Error string `json:"error"`
+}
 •••
 •name•|pkg|models|responses|message.go
+package responses
+
+type Message struct {
+	Message string `json:"message"`
+}
 •••
 •name•|pkg|models|api-request.go
+package models
+
+import (
+	"net/http"
+	"log"
+	"github.com/gorilla/mux"
+	"io/ioutil"
+	"errors"
+)
+
+type APIRequest struct {
+	*http.Request
+}
+
+func NewAPIRequest(r *http.Request) (ar *APIRequest) {
+	ar = new(APIRequest)
+	ar.Request = r
+	log.Printf("Call received: \"" + ar.Method + " " + ar.URL.Path + "\"\n")
+	return ar
+}
+
+func (ar *APIRequest) GetRouteVariables() (routeVariables map[string]string) {
+	return mux.Vars(ar.Request)
+}
+
+func (ar *APIRequest) GetQueryParameters() (queryParameters map[string][]string) {
+	return ar.URL.Query()
+}
+
+func (ar *APIRequest) GetRequestBody() (rawRequestBody []byte, err error) {
+	rawRequestBody, err = ioutil.ReadAll(ar.Body)
+	if err != nil {
+		log.Printf("Request Error: %v\n", err.Error())
+		return nil, errors.New("Could not read request body.")
+	}
+	return rawRequestBody, nil
+}
 •••
 •name•|pkg|models|api-response-writer.go
+package models
+
+import (
+	"net/http"
+	"log"
+	"strconv"
+	"encoding/json"
+)
+
+type APIResponseWriter struct {
+	http.ResponseWriter
+}
+
+func NewAPIResponseWriter(w http.ResponseWriter) (aw *APIResponseWriter) {
+	aw = new(APIResponseWriter)
+	aw.ResponseWriter = w
+	return aw
+}
+
+func (aw *APIResponseWriter) Respond(r *APIRequest, response interface{}, responseStatus int) () {
+	responseBody, err := json.Marshal(response)
+	if err != nil {
+		log.Printf("JSON Marshal Error: %v\n", err.Error())
+		aw.Header().Set("Content-Type", "text/plain")
+		aw.WriteHeader(http.StatusInternalServerError)
+		aw.Write([]byte("{\n\t\"error\": \"Could not process response body.\"\n}"))
+		return
+	}
+
+	aw.Header().Set("Content-Type", "application/json")
+	aw.WriteHeader(responseStatus)
+	aw.Write([]byte(responseBody))
+	log.Printf("Response sent: " + strconv.Itoa(responseStatus) + ": \"" + r.Method + " " + r.URL.Path + "\"\n")
+}
 •••
 •name•|pkg|models|•resource•.go
+package models
+
+type •u-resource• struct {
+    // TODO
+}
 •••
 •name•|pkg|router|router.go
+package router
+
+import (
+	"github.com/gorilla/mux"
+	"net/http"
+    "crypto/x509"
+    "•name•/pkg/database"
+    "•name•/pkg/handlers"
+    "•name•/pkg/configurations"
+)
+
+type Router struct {
+	*mux.Router
+}
+
+func New() (r *Router) {
+	return &Router{
+		mux.NewRouter().StrictSlash(true),
+	}
+}
+
+func (r *Router) CreateRoutes(collection *database.DBCollection, config *configurations.Config, ca *x509.CertPool) () {
+	r.HandleFunc("/", handlers.Home).Methods("GET")
+
+	r.HandleFunc("/health", handlers.HealthCheck).Methods("GET")
+
+	r.NotFoundHandler = http.HandlerFunc(handlers.NotFoundPage)
+}
 •••
 •name•|helm|templates|deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Values.service.name }}
+  labels:
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+spec:
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.service.name }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.service.internalPort }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.service.internalPort }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.service.internalPort }}
+        volumeMounts:
+         - mountPath: /root/config.json
+           name: config
+           subPath: config.json
+         - mountPath: /root/.pem
+           name: cacerts
+           subPath: .pem
+        resources:
+{{ toYaml .Values.resources | indent 12 }}
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ .Values.service.name }}
+        - name: cacerts
+          secret:
+            secretName: cacerts
+      imagePullSecrets:
+        - name: regsecret
 •••
 •name•|helm|templates|ingress.yaml
+# TODO
 •••
 •name•|helm|templates|service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.service.name }}
+  labels:
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+  - port: {{ .Values.service.externalPort }}
+    targetPort: {{ .Values.service.internalPort }}
+    protocol: TCP
+    name: {{ .Values.service.name }}
+  selector:
+    app: {{ .Values.service.name }}
 •••
 •name•|helm|Chart.yaml
+apiVersion: v1
+description: A Helm chart for Kubernetes deployment of the •f-name•
+name: •name•
+version: v0.0.1
 •••
 •name•|helm|values.yaml
+replicaCount: 1
+image:
+  repository: •registry•/•project•/•name•
+  tag: v0.0.1
+  pullPolicy: Always
+service:
+  name: •name•
+  type: ClusterIP
+  externalPort: 80
+  internalPort: 8080
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
 •••
 •name•|cmd|srv|config.json
+{}
+•••
+•name•|bin|.gitkeep
 •••
 •name•|deploy.sh
+#!/bin/bash
+
+buildDockerfile="./Dockerfile.build" # The name of your Dockerfile for the build image.
+releaseDockerfile="./Dockerfile.release" # The name of your Dockerfile for the release image.
+buildContext="." # What files Docker will consider when building (most likely the project root).
+registry="•registry•" # Location of Docker registry.
+project="•project•" # Any sub path from the registry to your repository.
+repository="•name•" # The name of your Docker repository.
+tag="v0.0.1" # The tag for this deployment.
+buildImage="$repository:build" # The full image name for the build image.
+releaseImage="$registry/$project/$repository:$tag" # The full image name for the release image.
+buildArtifact="app" # The name of the artifact generated in the build image for use in the release image.
+buildArtifactLocation="/go/src/$repository/cmd/srv/$buildArtifact" # The location of the build-artifact in the build-image.
+helmFolder="./helm" # The location of your helm folder.
+workingDir="/go/src/$repository/cmd/srv/$buildArtifact"
+releaseName="$repository" # The name for your release (should probably the same as the Docker repository name).
+
+# Building the build-image.
+docker build -t "$buildImage" -f "$buildDockerfile" "$buildContext"
+
+# Extracting the build-artifact from the build-image.
+docker create --name build_container "$buildImage"
+docker cp build_container:"$buildArtifactLocation" "./$buildArtifact"
+docker rm -f build_container
+
+# Building the release-image.
+docker build --no-cache -t "$releaseImage" -f "$releaseDockerfile" "$buildContext"
+
+# Cleaning up build process leftovers.
+rm -r "./$buildArtifact"
+docker rmi  "$buildImage"
+
+# Pushing the release-image.
+docker push "$releaseImage"
+
+# Deploying to Kubernetes via Helm.
+helm delete --purge "$releaseName"
+helm install "$helmFolder" --name "$releaseName"
 •••
 •name•|Dockerfile.release
+FROM alpine:latest
+WORKDIR /root/
+COPY app .
+CMD ["./app"]
 •••
 •name•|README.md
+# TODO
 •••
 •name•|helm|.helmignore
+# Patterns to ignore when building packages.
+# This supports shell glob matching, relative path matching, and
+# negation (prefixed with !). Only one pattern per line.
+.DS_Store
+# Common VCS dirs
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+# Common backup files
+*.swp
+*.bak
+*.tmp
+*~
+# Various IDEs
+.project
+.idea/
+*.tmproj
 •••
 •name•|.gitignore
+.idea/
+.DS_Store
+bin/
 •••
 •name•|.dockerignore
+Dockerfile.release
+.dockerignore
+.gitignore
+.idea/
+helm/
+cmd/srv/config.json
+README.md
+deploy.sh
 •••
 •name•|Dockerfile.build
+FROM golang:alpine
+COPY . /go/src/•name•
+WORKDIR /go/src/•name•/cmd/srv
+RUN apk add --no-cache --virtual .build-deps git; \
+  go get -d -v; \
+  go install -v; \
+  go build -o app;
 •••
